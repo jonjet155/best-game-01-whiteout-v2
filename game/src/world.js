@@ -113,7 +113,7 @@ export function housesAlive(world) {
 }
 
 export function addFloat(world, x, y, text, color) {
-  world.floats.push({ x, y, text, color: color || '#fef3c7', life: 1.1, maxLife: 1.1 });
+  world.floats.push({ x, y, text, color: color || '#7dd3fc', life: 1.1, maxLife: 1.1 });
   if (world.floats.length > 24) world.floats.shift();
 }
 
@@ -126,7 +126,7 @@ export function addScore(world, base, x, y, label) {
   const mult = multFor(world.combo);
   const pts = Math.round(base * mult);
   world.score += pts;
-  if (x !== undefined) addFloat(world, x, y, `+${pts}${label ? ' ' + label : ''}`, mult > 1 ? '#fde68a' : '#fef3c7');
+  if (x !== undefined) addFloat(world, x, y, `+${pts}${label ? ' ' + label : ''}`, '#7dd3fc');
   return pts;
 }
 
@@ -252,7 +252,7 @@ export function buildItem(world, def, audio) {
     addLog(world, `${n} villagers slip through the tunnel to the safe hall.`);
   } else if (def.id === 'bell') {
     world.bellTimer = 20;
-    world.wolves.forEach((w) => addFloat(world, w.x, w.y, 'BELL!', '#fef3c7'));
+    world.wolves.forEach((w) => addFloat(world, w.x, w.y, 'BELL!', '#7dd3fc'));
     world.wolves = [];
     addLog(world, 'The bell tolls — wolves scatter from the slopes.');
   } else if (def.id === 'heater') {
@@ -569,7 +569,7 @@ export function update(world, dt, audio) {
       w.done = true;
       if (audio) audio.hurt();
     }
-    if (world.bellTimer > 0 && d < 320) { w.done = true; addFloat(world, w.x, w.y, 'BELL!', '#fef3c7'); }
+    if (world.bellTimer > 0 && d < 320) { w.done = true; addFloat(world, w.x, w.y, 'BELL!', '#7dd3fc'); }
     if (world.upgrades.includes('choir') && d < 288) { w.done = true; }
   }
   world.wolves = world.wolves.filter((w) => !w.done);

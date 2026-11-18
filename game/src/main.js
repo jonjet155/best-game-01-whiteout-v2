@@ -30,7 +30,7 @@ world.best = Number(localStorage.getItem('whiteout-best') || 0);
 
 const ASSETS = {
   play: 'assets/media-generation-bg-play-0-984cd999-6cae-4c39-a8cc-3e0bf7003da1.jpg',
-  title: 'assets/media-generation-bg-title-0-94028377-78b2-40f9-83ab-ac6344b9c8b1.jpg',
+  title: 'assets/title-bg-dramatic.jpg',
   giant: 'assets/media-generation-giant-0-50ee0913-52e6-45d8-898b-8ad96da51765.jpg',
   wolves: 'assets/media-generation-wolves-0-282187e4-a255-41ee-85f9-daedc9aad7c7.jpg',
   logo: 'assets/logo-title.png',
