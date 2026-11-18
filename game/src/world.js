@@ -1,8 +1,8 @@
 // WHITEOUT — world state and rules. Pure logic over a seeded RNG; render.js
 // only draws what is here, and main.js only feeds it clicks and keys.
 import {
-  BLIZZARDS, BLIZZARD_TIME, BUILD, LOSE_LOST, MOUNTAIN_R, PHASES,
-  SLOPE_ANGLES, SLOPE_NAMES, UPGRADES, VILLAGE_R, gradeFor, multFor,
+  BLIZZARDS, BLIZZARD_TIME, BUILD, DIFFICULTIES, LOSE_LOST, MISSIONS, MOUNTAIN_R, PHASES,
+  SLOPE_ANGLES, SLOPE_NAMES, STORMS, UPGRADES, VILLAGE_R, gradeFor, multFor, stormDuration,
 } from './config.js';
 import { mulberry32, shuffle } from './random.js';
 import { SEED } from './config.js';
@@ -28,12 +28,29 @@ export function createWorld(seed) {
     wood: 30,
     food: 24,
     warmth: 82,
+    // v2: difficulty + endless (set on the title screen, preserved across
+    // startGame; scoreMult applies the difficulty's score multiplier).
+    difficulty: 'normal',
+    endless: false,
+    scoreMult: 1,
     blizzard: 1,
     blizzardTimer: BLIZZARD_TIME,
     finalStand: false,
     phaseIndex: 0,
+    // v2: per-blizzard phase sequence (from the storm table) — PHASES is
+    // only the library now. phaseDur is the current phase's real length.
+    phaseSeq: PHASES.map((p) => ({ id: p.id, dur: p.dur })),
+    phaseDur: PHASES[0].dur,
     phaseTimer: PHASES[0].dur,
     windAngle: -45,
+    windTimer: 0,
+    icefallTimer: 0,
+    // v2: one ski-patrol mission per blizzard from blizzard 2 on.
+    mission: null,
+    // v2: boss "White Death" (night 7). The old White Giant eye stays in
+    // the code but never activates on night 7.
+    death: { active: false, angle: -90, dist: 280, shrouds: 3, freezeTimer: 7 },
+    deathPushCooldown: 0,
     selectedSlope: 0,
     slopes: [],
     houses: [],
@@ -96,16 +113,41 @@ export function createWorld(seed) {
 export function startGame(world) {
   const fresh = createWorld(SEED);
   fresh.best = world.best;
+  // v2: keep the title-screen difficulty/endless selection, then apply it.
+  fresh.difficulty = world.difficulty || 'normal';
+  fresh.endless = !!world.endless;
+  const diff = DIFFICULTIES.find((d) => d.id === fresh.difficulty) || DIFFICULTIES[1];
+  fresh.wood = diff.wood;
+  fresh.food = diff.food;
+  fresh.scoreMult = diff.score;
   Object.keys(fresh).forEach((k) => { world[k] = fresh[k]; });
   world.screen = SCREEN_PLAY;
-  world.banner = 'BLIZZARD 1 OF 7 — THE SNOW IS COMING';
+  // v2: blizzard 1 runs the First Flakes storm (not the old global list).
+  setupStorm(world, 1);
+  world.banner = 'BLIZZARD 1 OF 7 — FIRST FLAKES · THE SNOW IS COMING';
   world.bannerTimer = 3;
   addLog(world, 'The first snow falls on the mountain.');
   addLog(world, 'Click a slope to release it before it fills.');
 }
 
+// v2: the storm for blizzard n (cycles in Endless: 8 -> storm 1, ...).
+export function stormOf(world) {
+  return STORMS[(world.blizzard - 1) % STORMS.length];
+}
+
+export function diffOf(world) {
+  return DIFFICULTIES.find((d) => d.id === (world.difficulty || 'normal')) || DIFFICULTIES[1];
+}
+
 export function phaseOf(world) {
-  return PHASES[world.phaseIndex];
+  const seq = world.phaseSeq && world.phaseSeq.length ? world.phaseSeq : PHASES.map((p) => ({ id: p.id, dur: p.dur }));
+  const entry = seq[world.phaseIndex % seq.length];
+  const base = PHASES.find((p) => p.id === entry.id) || PHASES[0];
+  return { ...base, dur: entry.dur ?? base.dur };
+}
+
+export function phaseName(world) {
+  return phaseOf(world).name;
 }
 
 export function housesAlive(world) {
@@ -124,7 +166,7 @@ export function addLog(world, text) {
 
 export function addScore(world, base, x, y, label) {
   const mult = multFor(world.combo);
-  const pts = Math.round(base * mult);
+  const pts = Math.round(base * mult * (world.scoreMult || 1));
   world.score += pts;
   if (x !== undefined) addFloat(world, x, y, `+${pts}${label ? ' ' + label : ''}`, '#7dd3fc');
   return pts;
@@ -184,6 +226,10 @@ export function scareWolf(world, wolf, audio) {
   addScore(world, 15 + bonus, wolf.x, wolf.y, 'WOLF OFF');
   bumpCombo(world);
   world.stats.wolvesScared += 1;
+  // v2: SCARE mission progress.
+  if (world.mission && world.mission.state === 'active' && world.mission.id === 'scare') {
+    world.mission.progress += 1;
+  }
   addLog(world, 'A wolf yelps and bolts for the treeline.');
   if (audio) audio.scare();
   return true;
@@ -288,6 +334,93 @@ export function pushEye(world, audio) {
   return true;
 }
 
+// --- v2: boss "White Death" (night 7) ---------------------------------------
+export function deathPos(world) {
+  const a = (world.death.angle * Math.PI) / 180;
+  return { x: 640 + Math.cos(a) * world.death.dist, y: 360 + Math.sin(a) * world.death.dist };
+}
+
+export function pushDeath(world, audio) {
+  if (world.screen !== SCREEN_PLAY) return false;
+  if (!world.death.active || world.bossDefeated) return false;
+  if (world.deathPushCooldown > 0) return false;
+  world.deathPushCooldown = 1;
+  world.death.dist = Math.min(280, world.death.dist + 70);
+  world.death.angle += 35;
+  world.death.shrouds -= 1;
+  const p = deathPos(world);
+  addScore(world, 150, p.x, p.y, 'SHROUD TORN');
+  bumpCombo(world);
+  addLog(world, `A shroud tears from White Death (${3 - world.death.shrouds}/3 torn)!`);
+  if (audio) audio.horn();
+  if (world.death.shrouds <= 0) {
+    world.bossDefeated = true;
+    addScore(world, 500, 640, 240, 'DEATH BROKEN');
+    world.banner = 'WHITE DEATH IS BROKEN — HOLD UNTIL THE STORM ENDS';
+    world.bannerTimer = 4;
+    addLog(world, 'White Death unravels into harmless snow!');
+    if (audio) audio.win();
+  }
+  return true;
+}
+
+// --- v2: ski-patrol rescue missions -----------------------------------------
+export function assignMission(world) {
+  if (world.blizzard < 2) { world.mission = null; return; }
+  const def = MISSIONS[Math.floor(world.rng() * MISSIONS.length)];
+  const m = {
+    id: def.id, name: def.name, desc: def.desc,
+    target: def.target, progress: 0, timer: def.timer, state: 'active',
+    slope: -1,
+  };
+  if (def.id === 'hold') m.slope = Math.floor(world.rng() * 8);
+  world.mission = m;
+  addLog(world, `MISSION — ${def.name}: ${def.desc}.`);
+}
+
+export function resolveMission(world, won, audio) {
+  const m = world.mission;
+  if (!m || m.state !== 'active') return;
+  m.state = won ? 'done' : 'failed';
+  if (won) {
+    const r = MISSIONS.find((x) => x.id === m.id).reward;
+    if (r.wood) world.wood += r.wood;
+    if (r.food) world.food += r.food;
+    if (r.warm) world.houses.forEach((h) => { if (!h.dead) h.warm = Math.min(100, h.warm + r.warm); });
+    addScore(world, r.score, 640, 150, 'MISSION');
+    world.banner = `MISSION COMPLETE — ${m.name}`;
+    world.bannerTimer = 3;
+    addLog(world, `MISSION COMPLETE — ${m.name}! The ski patrol cheers.`);
+    if (audio) audio.win();
+  } else {
+    world.banner = `MISSION FAILED — ${m.name}`;
+    world.bannerTimer = 3;
+    if (m.id === 'dig') {
+      world.villagers.lost += 2;
+      world.villagers.atRisk = Math.max(0, world.villagers.atRisk - 2);
+      addLog(world, `MISSION FAILED — ${m.name}. Two villagers are lost to the snow.`);
+    } else if (m.id === 'hold') {
+      addLog(world, `MISSION FAILED — ${m.name}. The slope lets go!`);
+      naturalAvalanche(world, world.slopes[m.slope], audio);
+    } else if (m.id === 'hearth') {
+      const cold = world.houses.filter((h) => !h.dead).sort((a, b) => a.warm - b.warm)[0];
+      if (cold) {
+        cold.hp -= 25;
+        if (cold.hp <= 0) {
+          cold.hp = 0; cold.dead = true;
+          world.villagers.lost += 2;
+          world.villagers.atRisk = Math.max(0, world.villagers.atRisk - 2);
+        }
+        addLog(world, `MISSION FAILED — ${m.name}. The coldest house cracks in the frost.`);
+      }
+    } else if (m.id === 'scare') {
+      world.food = Math.max(0, world.food - 6);
+      addLog(world, `MISSION FAILED — ${m.name}. Wolves raid the storehouse: −6 food.`);
+    }
+    if (audio) audio.hurt();
+  }
+}
+
 export function recordBlizzardScore(world) {
   if (world.blizzardRecorded) return;
   world.blizzardScores.push(world.score - (world.scoreAtBlizzardStart || 0));
@@ -316,28 +449,55 @@ export function pickDraft(world, choice, audio) {
   return true;
 }
 
+// v2: install blizzard n's storm — phase sequence, clock, wind, icefall,
+// boss, mission. Shared by startGame (blizzard 1, no storehouse bonus)
+// and startBlizzard (blizzards 2+, with the bonus).
+export function setupStorm(world, n) {
+  const storm = STORMS[(n - 1) % STORMS.length];
+  world.phaseSeq = storm.phases.map((p) => ({
+    id: p.id,
+    dur: p.dur ?? (PHASES.find((q) => q.id === p.id) || PHASES[0]).dur,
+  }));
+  world.blizzardTimer = stormDuration(storm);
+  world.finalStand = false;
+  world.phaseIndex = 0;
+  world.phaseDur = world.phaseSeq[0].dur;
+  world.phaseTimer = world.phaseSeq[0].dur;
+  world.windAngle = -90 + world.rng() * 360;
+  world.windTimer = storm.wind ? 4 : 0;
+  world.icefallTimer = storm.icefall || 0;
+  // v2: night 7 belongs to White Death. The old White Giant eye stays in
+  // the code but never activates on night 7.
+  world.eye.active = false;
+  world.eye.pushes = 0;
+  if (n === BLIZZARDS) {
+    world.death.active = true;
+    world.death.angle = -90;
+    world.death.dist = 280;
+    world.death.shrouds = 3;
+    world.death.freezeTimer = 7;
+    world.deathPushCooldown = 0;
+  } else {
+    world.death.active = false;
+  }
+  // v2: a fresh ski-patrol mission from blizzard 2 on.
+  assignMission(world);
+}
+
 export function startBlizzard(world, n) {
   world.blizzard = n;
   world.scoreAtBlizzardStart = world.score;
   world.blizzardRecorded = false;
-  world.blizzardTimer = BLIZZARD_TIME;
-  world.finalStand = false;
-  world.phaseIndex = 0;
-  world.phaseTimer = PHASES[0].dur;
-  world.windAngle = -90 + world.rng() * 360;
+  setupStorm(world, n);
+  const storm = STORMS[(n - 1) % STORMS.length];
   world.wood += 8 + n;
   world.food += 6;
   world.screen = SCREEN_PLAY;
-  world.banner = n === BLIZZARDS ? 'BLIZZARD 7 OF 7 — THE WHITE GIANT WAKES' : `BLIZZARD ${n} OF 7 — THE SNOW DEEPENS`;
+  const of7 = world.endless ? `BLIZZARD ${n}` : `BLIZZARD ${n} OF 7`;
+  const tag = n > BLIZZARDS ? ` · ENDLESS` : '';
+  world.banner = `${of7} — ${storm.name} · ${storm.tagline}${tag}`;
   world.bannerTimer = 3;
-  if (n === BLIZZARDS) {
-    world.eye.active = true;
-    world.eye.angle = -90;
-    world.eye.dist = 280;
-    world.eye.pushes = 0;
-    world.eyePushCooldown = 0;
-  }
-  addLog(world, `Blizzard ${n} begins. Wood +${8 + n}, food +6 from the storehouse.`);
+  addLog(world, `Blizzard ${n} begins — ${storm.name}. Wood +${8 + n}, food +6 from the storehouse.`);
 }
 
 function naturalAvalanche(world, slope, audio) {
@@ -383,9 +543,12 @@ function naturalAvalanche(world, slope, audio) {
 function spawnWolf(world) {
   const a = world.rng() * Math.PI * 2;
   const r = MOUNTAIN_R + 30 + world.rng() * 40;
+  // v2: storm wolf speed x difficulty wolf speed.
+  const storm = stormOf(world);
+  const diff = diffOf(world);
   world.wolves.push({
     x: 640 + Math.cos(a) * r, y: 360 + Math.sin(a) * r,
-    speed: 26 + world.rng() * 10 + world.blizzard * 1.5, warn: 0,
+    speed: (26 + world.rng() * 10 + world.blizzard * 1.5) * storm.wolfMult * diff.wolf, warn: 0,
   });
 }
 
@@ -448,6 +611,7 @@ export function update(world, dt, audio) {
   if (world.hornCooldown > 0) world.hornCooldown -= dt;
   if (world.throwCooldown > 0) world.throwCooldown -= dt;
   if (world.eyePushCooldown > 0) world.eyePushCooldown -= dt;
+  if (world.deathPushCooldown > 0) world.deathPushCooldown -= dt;
   if (world.bellTimer > 0) world.bellTimer -= dt;
 
   if (world.screen !== SCREEN_PLAY) return;
@@ -455,18 +619,29 @@ export function update(world, dt, audio) {
   // Combo only decays while playing — frozen in draft/pause/title.
   if (world.comboTimer > 0) { world.comboTimer -= dt; if (world.comboTimer <= 0) world.combo = 0; }
 
-  // --- weather phases ---
+  // --- weather phases (v2: this blizzard's storm sequence) ---
+  const storm = stormOf(world);
+  const diff = diffOf(world);
   world.phaseTimer -= dt;
   if (world.phaseTimer <= 0) {
-    world.phaseIndex = (world.phaseIndex + 1) % PHASES.length;
-    world.phaseTimer = PHASES[world.phaseIndex].dur;
+    world.phaseIndex = (world.phaseIndex + 1) % world.phaseSeq.length;
+    const entry = world.phaseSeq[world.phaseIndex];
+    world.phaseDur = entry.dur;
+    world.phaseTimer = entry.dur;
     const np = phaseOf(world);
     if (np.id === 'whiteout') {
-      const n = 2 + Math.min(3, world.blizzard);
+      // v2: storm 1 has no wolves; storms 3/6/7 spawn a fixed pack.
+      const n = storm.wolfPack > 0
+        ? storm.wolfPack
+        : (storm.id === 'first-flakes' ? 0 : 2 + Math.min(3, world.blizzard));
       for (let i = 0; i < n; i++) spawnWolf(world);
-      addLog(world, 'WHITEOUT — visibility drops. Wolves slip out of the trees!');
-      world.banner = 'WHITEOUT — WOLVES IN THE SNOW';
-      world.bannerTimer = 2.5;
+      if (n > 0) {
+        addLog(world, 'WHITEOUT — visibility drops. Wolves slip out of the trees!');
+        world.banner = 'WHITEOUT — WOLVES IN THE SNOW';
+        world.bannerTimer = 2.5;
+      } else {
+        addLog(world, 'WHITEOUT — visibility drops, but the treeline stays quiet.');
+      }
     } else if (np.id === 'snowfall') {
       addLog(world, 'Snowfall thickens on every slope.');
     } else if (np.id === 'clear') {
@@ -476,10 +651,49 @@ export function update(world, dt, audio) {
     }
   }
 
+  // --- v2: Howling Pass wind shifts ---
+  if (storm.wind) {
+    world.windTimer -= dt;
+    if (world.windTimer <= 0) {
+      world.windTimer = 4;
+      world.windAngle = -90 + world.rng() * 360;
+      const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+      const di = Math.round((((world.windAngle % 360) + 360) % 360) / 45) % 8;
+      world.banner = `THE WIND TURNS — NOW FROM THE ${dirs[di]}`;
+      world.bannerTimer = 2.5;
+      addLog(world, `The wind turns — now from the ${dirs[di]}. The windward slope fills fast!`);
+    }
+  }
+
+  // --- v2: Icefall spikes ---
+  if (storm.icefall > 0) {
+    world.icefallTimer -= dt;
+    if (world.icefallTimer <= 0) {
+      world.icefallTimer = storm.icefall;
+      const s = world.slopes[Math.floor(world.rng() * world.slopes.length)];
+      s.pack = Math.min(100, s.pack + 25);
+      s.flash = 1;
+      const p = slopePoint(world, s, 190);
+      addFloat(world, p.x, p.y - 20, 'ICE CRACKS!', '#bae6fd');
+      addLog(world, `ICE CRACKS on the ${s.name} slope — +25 snowpack!`);
+      if (s.pack >= 100) naturalAvalanche(world, s, audio);
+    }
+  }
+
   // --- snowpack grows / melts ---
   const sense = world.upgrades.includes('sense') ? 0.8 : 1;
+  // v2: endless blizzards pile on +0.08 pack rate each beyond blizzard 7.
+  const endlessPack = world.endless && world.blizzard > BLIZZARDS
+    ? 1 + 0.08 * (world.blizzard - BLIZZARDS) : 1;
   for (const s of world.slopes) {
-    let rate = phase.packRate * sense;
+    let rate = phase.packRate * sense * storm.pack * diff.pack * endlessPack;
+    // v2: Howling Pass wind — windward slope (within 45° of the wind)
+    // fills x1.6, leeward (opposite) x0.7.
+    if (storm.wind && rate > 0) {
+      const dAng = Math.abs(((s.angle - world.windAngle + 540) % 360) - 180);
+      if (dAng <= 45) rate *= 1.6;
+      else if (dAng >= 135) rate *= 0.7;
+    }
     if (s.fence && rate > 0) rate *= 0.5;
     if (s.fence && world.upgrades.includes('roots')) {
       // deep roots: neighbours of a fenced slope also slow (handled below via flag)
@@ -499,7 +713,8 @@ export function update(world, dt, audio) {
   }
 
   // --- hearths ---
-  const drain = phase.warmRate * (world.heater ? 0.5 : 1);
+  // v2: storm warmth multiplier x difficulty warmth multiplier.
+  const drain = phase.warmRate * storm.warm * diff.warm * (world.heater ? 0.5 : 1);
   for (const h of world.houses) {
     if (h.dead) continue;
     h.warm = Math.max(0, Math.min(100, h.warm + drain * dt));
@@ -546,6 +761,10 @@ export function update(world, dt, audio) {
         if (i >= 0) world.buried.splice(i, 1);
         world.villagers.protected += 1;
         world.stats.rescues += 1;
+        // v2: DIG mission progress.
+        if (world.mission && world.mission.state === 'active' && world.mission.id === 'dig') {
+          world.mission.progress += 1;
+        }
         addScore(world, 50, r.target.x, r.target.y - 10, 'RESCUED');
         bumpCombo(world);
         addLog(world, 'Dug out alive! The villager stumbles to the warm hall.');
@@ -574,7 +793,8 @@ export function update(world, dt, audio) {
   }
   world.wolves = world.wolves.filter((w) => !w.done);
 
-  // --- the White Giant's storm eye (blizzard 7) ---
+  // --- the White Giant's storm eye (legacy: kept for the record; v2
+  // night 7 belongs to White Death, so the eye never activates in play) ---
   if (world.eye.active && !world.bossDefeated) {
     world.eye.angle += 14 * dt;
     world.eye.dist = Math.max(96, world.eye.dist - 5.5 * dt);
@@ -589,10 +809,58 @@ export function update(world, dt, audio) {
     }
   }
 
-  // B1: breaking the Giant during FINAL STAND wins at once — the only
+  // --- v2: White Death walks the ring (night 7) ---
+  if (world.death.active && !world.bossDefeated) {
+    world.death.angle += 10 * dt;
+    world.death.dist = Math.max(96, world.death.dist - 4 * dt);
+    world.death.freezeTimer -= dt;
+    if (world.death.freezeTimer <= 0) {
+      world.death.freezeTimer = 7;
+      // Freeze the slope nearest Death's angle.
+      let nearest = world.slopes[0];
+      let bestD = 360;
+      for (const s of world.slopes) {
+        const d = Math.abs(((s.angle - world.death.angle + 540) % 360) - 180);
+        if (d < bestD) { bestD = d; nearest = s; }
+      }
+      nearest.pack = Math.min(100, nearest.pack + 30);
+      nearest.flash = 1;
+      const fp = slopePoint(world, nearest, 190);
+      addFloat(world, fp.x, fp.y - 20, 'FROZEN!', '#bae6fd');
+      addLog(world, `WHITE DEATH FREEZES the ${nearest.name} slope — +30 snowpack!`);
+      if (nearest.pack >= 100) naturalAvalanche(world, nearest, audio);
+    }
+    if (world.death.dist <= 96) {
+      world.death.dist = 260;
+      world.shake = 0.8;
+      const alive = world.houses.filter((h) => !h.dead);
+      if (alive.length > 0) {
+        const h = alive[Math.floor(world.rng() * alive.length)];
+        h.hp -= 25;
+        h.warm = Math.max(0, h.warm - 20);
+        if (h.hp <= 0) {
+          h.hp = 0; h.dead = true;
+          world.villagers.lost += 2;
+          world.villagers.atRisk = Math.max(0, world.villagers.atRisk - 2);
+        }
+      }
+      addLog(world, 'WHITE DEATH REACHES THE VILLAGE — a house is struck, its fire gutters!');
+      addFloat(world, 640, 240, 'DEATH STRIKES!', '#e0f2fe');
+      if (audio) audio.avalanche();
+    }
+  }
+
+  // --- v2: ski-patrol mission progress ---
+  updateMission(world, dt, audio);
+
+  // B1: breaking the boss during FINAL STAND wins at once — the only
   // win call used to sit inside `if (!world.finalStand)`, so a late
-  // break could never reach WIN.
-  if (world.finalStand && world.bossDefeated) endGame(world, true, '', audio);
+  // break could never reach WIN. v2: in Endless the win becomes a draft
+  // into the next blizzard instead.
+  if (world.finalStand && world.bossDefeated) {
+    if (world.endless) startDraft(world);
+    else endGame(world, true, '', audio);
+  }
 
   // S6: end conditions are checked before the blizzard clock, so a loss
   // on the same frame can never grant a free draft.
@@ -603,16 +871,59 @@ export function update(world, dt, audio) {
   if (!world.finalStand) {
     world.blizzardTimer -= dt;
     if (world.blizzardTimer <= 0) {
+      // v2: the mission resolves when its blizzard ends.
+      const m = world.mission;
+      if (m && m.state === 'active') {
+        const met = (m.id === 'dig' || m.id === 'scare') && m.progress >= m.target;
+        resolveMission(world, met, audio);
+      }
+      // A failed mission can lose the game (avalanche / lost villagers).
+      checkEnd(world, audio);
+      if (world.screen !== SCREEN_PLAY) return;
       if (world.blizzard < BLIZZARDS) {
         startDraft(world);
       } else if (world.bossDefeated) {
-        endGame(world, true, '', audio);
+        // v2: Endless continues past blizzard 7 instead of winning.
+        if (world.endless) startDraft(world);
+        else endGame(world, true, '', audio);
+      } else if (world.blizzard > BLIZZARDS) {
+        startDraft(world);
       } else {
         world.finalStand = true;
-        world.banner = 'FINAL STAND — BREAK THE WHITE GIANT';
+        world.banner = 'FINAL STAND — BREAK WHITE DEATH';
         world.bannerTimer = 4;
-        addLog(world, 'The seventh blizzard will not end until the Giant breaks.');
+        addLog(world, 'The seventh blizzard will not end until White Death breaks.');
       }
+    }
+  }
+}
+
+function updateMission(world, dt, audio) {
+  const m = world.mission;
+  if (!m || m.state !== 'active') return;
+  if (m.id === 'dig') {
+    m.timer -= dt;
+    if (m.progress >= m.target) resolveMission(world, true, audio);
+    else if (m.timer <= 0) resolveMission(world, false, audio);
+  } else if (m.id === 'scare') {
+    if (m.progress >= m.target) resolveMission(world, true, audio);
+    // Otherwise it resolves when the blizzard ends (see blizzard clock).
+  } else if (m.id === 'hold') {
+    const s = world.slopes[m.slope];
+    if (s.pack < 60) {
+      m.progress += dt;
+      if (m.progress >= m.target) resolveMission(world, true, audio);
+    } else {
+      m.progress = 0;
+    }
+  } else if (m.id === 'hearth') {
+    const alive = world.houses.filter((h) => !h.dead);
+    const allWarm = alive.length > 0 && alive.every((h) => h.warm >= 40);
+    if (allWarm) {
+      m.progress += dt;
+      if (m.progress >= m.target) resolveMission(world, true, audio);
+    } else {
+      m.progress = 0;
     }
   }
 }

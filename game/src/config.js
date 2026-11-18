@@ -23,6 +23,80 @@ export const PHASES = [
 ];
 export const BLIZZARD_TIME = PHASES.reduce((a, p) => a + p.dur, 0); // 40 s
 
+// --- v2: the seven named storms -------------------------------------------
+// One entry per blizzard. `phases` is that blizzard's own sequence of
+// phase ids (durations override the library's where given); the old
+// global PHASES list above is now only the phase library. Fields:
+//   pack  — multiplier on snowpack growth
+//   warm  — multiplier on hearth drain (warmRate is negative)
+//   wind  — true: the wind angle shifts every few seconds (storm 2)
+//   wolfMult — multiplier on wolf speed
+//   wolfPack — fixed wolf-pack size spawned at each whiteout (0 = none)
+//   icefall — seconds between icefall spikes (0 = none)
+//   fog   — whiteout fog strength multiplier
+export const STORMS = [
+  {
+    id: 'first-flakes', name: 'FIRST FLAKES', tagline: 'THE SNOW IS COMING',
+    phases: [{ id: 'calm' }, { id: 'snowfall' }, { id: 'snowfall' }, { id: 'clear' }],
+    pack: 0.8, warm: 1, wind: false, wolfMult: 1, wolfPack: 0, icefall: 0, fog: 1,
+  },
+  {
+    id: 'howling-pass', name: 'HOWLING PASS', tagline: 'THE WIND TURNS',
+    phases: [{ id: 'snowfall' }, { id: 'whiteout' }, { id: 'snowfall' }, { id: 'clear' }],
+    pack: 1, warm: 1, wind: true, wolfMult: 1, wolfPack: 0, icefall: 0, fog: 1,
+  },
+  {
+    id: 'wolf-moon', name: 'WOLF MOON', tagline: 'THE PACK HUNTS',
+    phases: [{ id: 'snowfall' }, { id: 'whiteout' }, { id: 'whiteout' }, { id: 'snowfall' }, { id: 'clear' }],
+    pack: 1, warm: 1, wind: false, wolfMult: 1.3, wolfPack: 4, icefall: 0, fog: 1.1,
+  },
+  {
+    id: 'icefall', name: 'ICEFALL', tagline: 'THE MOUNTAIN CRACKS',
+    phases: [{ id: 'snowfall' }, { id: 'whiteout' }, { id: 'snowfall' }, { id: 'clear' }],
+    pack: 1, warm: 1, wind: false, wolfMult: 1, wolfPack: 0, icefall: 8, fog: 1,
+  },
+  {
+    id: 'deep-freeze', name: 'DEEP FREEZE', tagline: 'THE COLD BITES DEEP',
+    phases: [{ id: 'calm', dur: 4 }, { id: 'snowfall' }, { id: 'whiteout' }, { id: 'clear' }],
+    pack: 1, warm: 2, wind: false, wolfMult: 1, wolfPack: 0, icefall: 0, fog: 1,
+  },
+  {
+    id: 'whiteout-wall', name: 'WHITEOUT WALL', tagline: 'YOU CANNOT SEE THE SKY',
+    phases: [{ id: 'snowfall' }, { id: 'whiteout' }, { id: 'whiteout' }, { id: 'whiteout' }, { id: 'snowfall' }],
+    pack: 1.15, warm: 1, wind: false, wolfMult: 1, wolfPack: 3, icefall: 0, fog: 1.6,
+  },
+  {
+    id: 'white-death', name: 'WHITE DEATH', tagline: 'HE WALKS THE RING',
+    phases: [{ id: 'snowfall' }, { id: 'whiteout' }, { id: 'snowfall' }, { id: 'whiteout' }],
+    pack: 1.2, warm: 1.3, wind: false, wolfMult: 1.2, wolfPack: 3, icefall: 10, fog: 1.3,
+  },
+];
+
+export function stormDuration(storm) {
+  return storm.phases.reduce((a, p) => a + (p.dur ?? (PHASES.find((q) => q.id === p.id) || PHASES[0]).dur), 0);
+}
+
+// --- v2: difficulties + endless --------------------------------------------
+// score — multiplier on points earned. Endless is a mode, not a
+// difficulty: same numbers as Normal, but the game never ends in a win.
+export const DIFFICULTIES = [
+  { id: 'easy', name: 'EASY', pack: 0.8, warm: 0.75, wolf: 0.6, wood: 40, food: 32, score: 0.8 },
+  { id: 'normal', name: 'NORMAL', pack: 1, warm: 1, wolf: 1, wood: 30, food: 24, score: 1 },
+  { id: 'hard', name: 'HARD', pack: 1.25, warm: 1.3, wolf: 1.5, wood: 24, food: 18, score: 1.25 },
+  { id: 'endless', name: 'ENDLESS', pack: 1, warm: 1, wolf: 1, wood: 30, food: 24, score: 1 },
+];
+
+// --- v2: ski-patrol rescue missions ----------------------------------------
+// One mission per blizzard from blizzard 2 on, picked (seeded) from this
+// pool. `target` is filled in when the mission is assigned (a slope index
+// for `hold`, a count for `dig`/`scare`, seconds for `hold`/`hearth`).
+export const MISSIONS = [
+  { id: 'dig', name: 'DIG OUT 3 BURIED', desc: 'Rescue 3 buried villagers before the timer runs out', target: 3, timer: 45, reward: { wood: 15, score: 150 } },
+  { id: 'hold', name: 'HOLD THE SLOPE', desc: 'Keep the named slope below 60 pack for 20 seconds', target: 20, timer: 0, reward: { food: 10, score: 150 } },
+  { id: 'hearth', name: 'KEEP EVERY HEARTH LIT', desc: 'Every standing house warm 40 or more for 25 seconds', target: 25, timer: 0, reward: { warm: 20, score: 150 } },
+  { id: 'scare', name: 'SCARE 4 WOLVES', desc: 'Scare 4 wolves before this blizzard ends', target: 4, timer: 0, reward: { wood: 10, score: 200 } },
+];
+
 export const BUILD = [
   { key: '1', id: 'fence', name: 'SNOW FENCE', cost: { wood: 8 }, desc: 'Chosen slope fills HALF as fast' },
   { key: '2', id: 'wall', name: 'ICE WALL', cost: { wood: 10 }, desc: 'Shields the weakest house' },
