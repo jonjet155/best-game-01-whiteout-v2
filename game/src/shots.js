@@ -87,10 +87,14 @@ export function stageShot(name, world) {
   }
   // play: PAYOFF frame on blizzard 7 — a big controlled release just fired
   // on the SE slope, a rescue chain is digging out two buried villagers,
-  // and the White Giant's storm eye rides the ring (2 of 3 pushes done).
+  // and White Death walks the ring (2 of 3 shrouds torn) after freezing
+  // a slope. v2: the Giant eye is gone — Death replaces it.
   startGame(world);
   world.blizzard = 7;
-  world.phaseIndex = 2; // whiteout
+  // v2: White Death's own phase sequence (whiteout now).
+  world.phaseSeq = [{ id: 'snowfall', dur: 14 }, { id: 'whiteout', dur: 10 }, { id: 'snowfall', dur: 14 }, { id: 'whiteout', dur: 10 }];
+  world.phaseIndex = 1; // whiteout
+  world.phaseDur = 10;
   world.phaseTimer = 6.2;
   world.blizzardTimer = 22.5;
   world.windAngle = 135; // staged at 135° so the wind arrow sits over the BUILD tablet (N6 draw-order check)
@@ -101,7 +105,11 @@ export function stageShot(name, world) {
   world.warmth = 61;
   world.combo = 7;
   world.comboTimer = 4.2;
-  world.eye = { active: true, angle: -45, dist: 280, pushes: 2 };
+  world.eye.active = false;
+  world.eye.pushes = 0;
+  world.death = { active: true, angle: -45, dist: 210, shrouds: 1, freezeTimer: 5 };
+  // v2: an active ski-patrol mission (the strip shows under the banner).
+  world.mission = { id: 'dig', name: 'DIG OUT 3 BURIED', desc: 'Rescue 3 buried villagers before the timer runs out', target: 3, progress: 1, timer: 32, state: 'active', slope: -1 };
   world.villagers.evacuated = 11;
   world.villagers.protected = 27;
   world.villagers.atRisk = 9;
@@ -117,6 +125,7 @@ export function stageShot(name, world) {
   world.slopes[1].fence = true;
   world.slopes[6].fence = true;
   world.slopes[3].flash = 0.5;
+  world.slopes[7].flash = 0.8; // v2: the NW slope Death just froze
   world.selectedSlope = 3;
   world.houses[2].warm = 22;
   world.houses[5].warm = 18;
@@ -144,13 +153,14 @@ export function stageShot(name, world) {
   world.floats.push({ x: 900, y: 300, text: '+40', color: '#7dd3fc', life: 0.8, maxLife: 1.1 });
   world.floats.push({ x: 480, y: 290, text: 'COMBO x1.25', color: '#7dd3fc', life: 1.0, maxLife: 1.1, size: 24 });
   world.floats.push({ x: 780, y: 565, text: '+50 RESCUED', color: '#7dd3fc', life: 0.7, maxLife: 1.1 });
-  world.banner = 'BLIZZARD 7 — THE WHITE GIANT WAKES · PUSH THE EYE BACK';
+  world.floats.push({ x: 506, y: 200, text: 'FROZEN!', color: '#bae6fd', life: 1.0, maxLife: 1.1, size: 22 });
+  world.banner = 'BLIZZARD 7 — WHITE DEATH WALKS THE RING · TEAR THE SHROUDS';
   world.bannerTimer = 2.5;
   world.log = [
-    'BLIZZARD 7 — the White Giant wakes. Its eye rides the storm ring!',
+    'WHITE DEATH FREEZES the NW slope — +30 snowpack!',
+    'Blizzard 7 begins — WHITE DEATH. Wood +15, food +6 from the storehouse.',
     'Controlled release on the SE slope — the gully runs clear.',
     'A wolf yelps and bolts for the treeline.',
-    'Snowfall thickens on every slope.',
   ];
   world.stats.releases = 19;
   world.stats.rescues = 4;

@@ -1,12 +1,12 @@
 // WHITEOUT — boot, main loop, click/key dispatch. The canvas is fixed at
 // 1280x720 internally and letterboxed by CSS; all hit tests use that space.
-import { BUILD, H, SEED, W } from './config.js';
+import { BUILD, DIFFICULTIES, H, SEED, W } from './config.js';
 import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import {
   SCREEN_DRAFT, SCREEN_LOSE, SCREEN_PAUSE, SCREEN_PLAY, SCREEN_TITLE,
   SCREEN_WIN, buildItem, createWorld, pickDraft,
-  pushEye, releaseSlope, rescueBuried, ringHorn, scareWolf, startGame,
+  pushDeath, pushEye, releaseSlope, rescueBuried, ringHorn, scareWolf, startGame,
   stokeHouse, update,
 } from './world.js';
 import { hitTest, render } from './render.js';
@@ -24,6 +24,8 @@ const seed = Number(params.get('seed') || SEED);
 
 const world = createWorld(seed);
 world.audioMuted = false;
+// v2: debug handle for live playtests (read state / force scenarios).
+window.__world = world;
 const input = createInput(canvas);
 const audio = createAudio();
 world.best = Number(localStorage.getItem('whiteout-best') || 0);
@@ -52,6 +54,14 @@ function setStatus(text) {
 function doClick(x, y) {
   const hit = hitTest(world, x, y);
   switch (hit.kind) {
+    case 'difficulty': {
+      // v2: pick a difficulty / endless on the title screen.
+      const d = DIFFICULTIES[hit.index];
+      world.difficulty = d.id;
+      world.endless = d.id === 'endless';
+      audio.click();
+      break;
+    }
     case 'play':
       audio.click();
       startGame(world);
@@ -69,6 +79,9 @@ function doClick(x, y) {
       break;
     case 'eye':
       pushEye(world, audio);
+      break;
+    case 'death':
+      pushDeath(world, audio);
       break;
     case 'wolf':
       scareWolf(world, hit.wolf, audio);

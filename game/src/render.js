@@ -4,12 +4,12 @@
 // mountain sits in the centre, a storm ring circles it, and four corner
 // tablets hold threats, rescue, build and weather/resources.
 import {
-  BLIZZARDS, BUILD, CX, CY, H, MOUNTAIN_R, RING_R, SLOPE_ANGLES, SLOPE_NAMES, THREATS,
+  BLIZZARDS, BUILD, CX, CY, DIFFICULTIES, H, MOUNTAIN_R, RING_R, SLOPE_ANGLES, SLOPE_NAMES, STORMS, THREATS,
   VILLAGE_R, W, gradeFor, multFor,
 } from './config.js';
 import {
   SCREEN_DRAFT, SCREEN_LOSE, SCREEN_PAUSE, SCREEN_PLAY, SCREEN_TITLE,
-  SCREEN_WIN, housesAlive, phaseOf,
+  SCREEN_WIN, deathPos, housesAlive, phaseOf, stormOf,
 } from './world.js';
 
 const FONT = '"Lilita One", "Arial Black", sans-serif';
@@ -731,6 +731,61 @@ function drawStormRing(ctx, world) {
     ctx.stroke();
     ctx.setLineDash([]);
   }
+  // v2: White Death walks the ring on night 7 (replaces the Giant eye).
+  if (world.death.active && !world.bossDefeated) {
+    const dp = deathPos(world);
+    ctx.save();
+    // freeze aura
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(dp.x, dp.y, 40 + Math.sin(world.time * 4) * 3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(186, 230, 253, 0.35)';
+    ctx.beginPath();
+    ctx.arc(dp.x, dp.y, 47 + Math.sin(world.time * 4 + 1) * 3, world.time * 1.2, world.time * 1.2 + Math.PI * 1.1);
+    ctx.stroke();
+    // tall pale hooded figure: white cloak, hollow dark face, ice eyes
+    const cg = ctx.createLinearGradient(dp.x, dp.y - 30, dp.x, dp.y + 28);
+    cg.addColorStop(0, '#ffffff');
+    cg.addColorStop(1, '#bae6fd');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.moveTo(dp.x - 13, dp.y + 26);
+    ctx.quadraticCurveTo(dp.x - 15, dp.y - 6, dp.x - 8, dp.y - 16);
+    ctx.quadraticCurveTo(dp.x, dp.y - 30, dp.x + 8, dp.y - 16);
+    ctx.quadraticCurveTo(dp.x + 15, dp.y - 6, dp.x + 13, dp.y + 26);
+    ctx.quadraticCurveTo(dp.x, dp.y + 30, dp.x - 13, dp.y + 26);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#7dd3fc';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // hollow dark face
+    ctx.fillStyle = '#0b1c2c';
+    ctx.beginPath();
+    ctx.ellipse(dp.x, dp.y - 14, 6.5, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // ice-blue eyes
+    ctx.fillStyle = '#7dd3fc';
+    ctx.shadowColor = '#7dd3fc';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(dp.x - 2.6, dp.y - 15, 1.6, 0, Math.PI * 2);
+    ctx.arc(dp.x + 2.6, dp.y - 15, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    text(ctx, 'WHITE DEATH — CLICK TO TEAR A SHROUD', dp.x, dp.y - 44, 11, '#e0f2fe', 'center', 'rgba(7,18,30,0.85)');
+    // faint tether to the village
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.35)';
+    ctx.setLineDash([6, 6]);
+    ctx.beginPath();
+    ctx.moveTo(dp.x, dp.y);
+    ctx.lineTo(CX, CY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   ctx.restore();
 }
 
@@ -752,14 +807,19 @@ function drawWindArrow(ctx, world) {
 
 function drawPills(ctx, world) {
   // Always-visible WIN / LOSE lines, flanking the top of the ring.
+  // v2: widened to 262 so the Endless line fits at 12 px.
   ctx.save();
   ctx.fillStyle = 'rgba(7, 18, 30, 0.85)';
-  rr(ctx, 402, 10, 232, 32, 16); ctx.fill();
+  rr(ctx, 372, 10, 262, 32, 16); ctx.fill();
   ctx.strokeStyle = '#4ade80'; ctx.lineWidth = 2; ctx.stroke();
-  textB(ctx, 'WIN', 414, 31, 16, '#4ade80', 'left');
-  text(ctx, world.blizzard === BLIZZARDS ? 'Break the Giant' : `Survive 7 blizzards`, 452, 31, 13, '#f8fafc', 'left');
+  textB(ctx, 'WIN', 384, 31, 16, '#4ade80', 'left');
+  if (world.endless) {
+    text(ctx, 'Endless — how long can you hold?', 424, 31, 12, '#f8fafc', 'left');
+  } else {
+    text(ctx, world.blizzard === BLIZZARDS ? 'Break White Death' : `Survive 7 blizzards`, 424, 31, 13, '#f8fafc', 'left');
+  }
   ctx.fillStyle = 'rgba(7, 18, 30, 0.85)';
-  rr(ctx, 646, 10, 232, 32, 16); ctx.fill();
+  rr(ctx, 646, 10, 262, 32, 16); ctx.fill();
   ctx.strokeStyle = '#f87171'; ctx.lineWidth = 2; ctx.stroke();
   textB(ctx, 'LOSE', 658, 31, 16, '#f87171', 'left');
   text(ctx, 'All houses fall · 15 lost', 700, 31, 13, '#f8fafc', 'left');
@@ -767,7 +827,11 @@ function drawPills(ctx, world) {
 }
 
 function drawBossBar(ctx, world) {
-  if (world.blizzard !== BLIZZARDS && !world.eye.active) return;
+  // v2: night 7 shows WHITE DEATH (3 shroud pips); the old Giant bar only
+  // appears if the legacy eye is ever active.
+  const isDeath = world.death.active;
+  const isEye = world.eye.active;
+  if (!isDeath && !isEye) return;
   const x = 440;
   const y = 44;
   const w = 400;
@@ -776,25 +840,64 @@ function drawBossBar(ctx, world) {
   ctx.fillStyle = 'rgba(7, 18, 30, 0.88)';
   rr(ctx, x, y, w, h, 8);
   ctx.fill();
-  ctx.strokeStyle = '#818cf8';
+  ctx.strokeStyle = isDeath ? '#7dd3fc' : '#818cf8';
   ctx.lineWidth = 2;
   ctx.stroke();
   const a = world.assets;
-  ctx.save();
-  ctx.beginPath();
-  ctx.arc(x + 20, y + 17, 13, 0, Math.PI * 2);
-  ctx.clip();
-  if (a && a.giant) ctx.drawImage(a.giant, x + 7, y + 1, 26, 39);
-  else { ctx.fillStyle = '#c7d2fe'; ctx.fillRect(x + 7, y + 4, 26, 26); }
-  ctx.restore();
-  text(ctx, world.bossDefeated ? 'WHITE GIANT — BROKEN' : 'WHITE GIANT — STORM EYE', x + 40, y + 15, 14, '#e0e7ff', 'left');
-  text(ctx, world.bossDefeated ? 'hold until the storm ends' : `pushed back ${world.eye.pushes}/3`, x + 40, y + 29, 10, '#a5b4fc', 'left');
-  // push pips
-  for (let i = 0; i < 3; i++) {
-    ctx.fillStyle = i < world.eye.pushes ? '#818cf8' : 'rgba(255,255,255,0.2)';
+  if (isDeath) {
+    // mini hooded figure in the medallion
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(x + w - 18 - i * 20, y + 17, 6, 0, Math.PI * 2);
+    ctx.arc(x + 20, y + 17, 13, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = '#0b1c2c';
+    ctx.fillRect(x + 7, y + 4, 26, 26);
+    const cg = ctx.createLinearGradient(0, y + 6, 0, y + 28);
+    cg.addColorStop(0, '#ffffff');
+    cg.addColorStop(1, '#bae6fd');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.moveTo(x + 11, y + 28);
+    ctx.quadraticCurveTo(x + 10, y + 12, x + 20, y + 7);
+    ctx.quadraticCurveTo(x + 30, y + 12, x + 29, y + 28);
+    ctx.closePath();
     ctx.fill();
+    ctx.fillStyle = '#0b1c2c';
+    ctx.beginPath();
+    ctx.ellipse(x + 20, y + 14, 3.5, 4.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#7dd3fc';
+    ctx.beginPath();
+    ctx.arc(x + 18.4, y + 13.5, 0.9, 0, Math.PI * 2);
+    ctx.arc(x + 21.6, y + 13.5, 0.9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    text(ctx, world.bossDefeated ? 'WHITE DEATH — BROKEN' : 'WHITE DEATH', x + 40, y + 15, 14, '#e0f2fe', 'left');
+    text(ctx, world.bossDefeated ? 'hold until the storm ends' : `shrouds torn ${3 - world.death.shrouds}/3 — click him`, x + 40, y + 29, 10, '#bae6fd', 'left');
+    // shroud pips
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < 3 - world.death.shrouds ? '#7dd3fc' : 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.arc(x + w - 18 - i * 20, y + 17, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x + 20, y + 17, 13, 0, Math.PI * 2);
+    ctx.clip();
+    if (a && a.giant) ctx.drawImage(a.giant, x + 7, y + 1, 26, 39);
+    else { ctx.fillStyle = '#c7d2fe'; ctx.fillRect(x + 7, y + 4, 26, 26); }
+    ctx.restore();
+    text(ctx, world.bossDefeated ? 'WHITE GIANT — BROKEN' : 'WHITE GIANT — STORM EYE', x + 40, y + 15, 14, '#e0e7ff', 'left');
+    text(ctx, world.bossDefeated ? 'hold until the storm ends' : `pushed back ${world.eye.pushes}/3`, x + 40, y + 29, 10, '#a5b4fc', 'left');
+    // push pips
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < world.eye.pushes ? '#818cf8' : 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.arc(x + w - 18 - i * 20, y + 17, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   ctx.restore();
 }
@@ -806,7 +909,7 @@ function drawThreats(ctx, world) {
   const critical = world.slopes.filter((s) => s.pack >= 90).length;
   const rows = [
     { icon: '❄', name: 'Avalanche', sub: `${danger} slopes deep · ${critical} critical`, frac: danger / 8, color: '#f97316' },
-    { icon: '🌨', name: 'Blizzard', sub: `${world.blizzard} of 7 — ${phase.name.toLowerCase()} now`, frac: world.blizzard / 7, color: '#7dd3fc' },
+    { icon: '🌨', name: 'Blizzard', sub: world.endless ? `${world.blizzard} · ENDLESS — ${phase.name.toLowerCase()} now` : `${world.blizzard} of 7 — ${phase.name.toLowerCase()} now`, frac: Math.min(1, world.blizzard / 7), color: '#7dd3fc' },
     { icon: '🧊', name: 'Icefall', sub: critical > 0 ? `${critical} slopes about to break` : 'slopes holding, for now', frac: critical / 8, color: '#38bdf8' },
     { icon: '🌫', name: 'Whiteout', sub: phase.id === 'whiteout' ? 'ACTIVE — visibility down' : `next phase in ${Math.ceil(world.phaseTimer)}s`, frac: phase.id === 'whiteout' ? 1 : 0.3, color: '#cbd5e1' },
     { icon: '🐺', name: 'Wolves', sub: world.wolves.length > 0 ? `${world.wolves.length} on the mountain — click to scare` : 'in the treeline, waiting', frac: world.wolves.length / 5, color: '#a78bfa' },
@@ -819,7 +922,9 @@ function drawThreats(ctx, world) {
     bar(ctx, TL.x + 216, y + 4, 66, 7, r.frac, r.color);
     y += 28;
   }
-  const nextPhase = ['calm', 'snowfall', 'whiteout', 'clear'][(world.phaseIndex + 1) % 4].toUpperCase();
+  // v2: the next phase comes from this blizzard's storm sequence.
+  const seq = world.phaseSeq && world.phaseSeq.length ? world.phaseSeq : [];
+  const nextPhase = seq.length ? seq[(world.phaseIndex + 1) % seq.length].id.toUpperCase() : '—';
   const windDeg = Math.round(((world.windAngle % 360) + 360) % 360);
   text(ctx, `NEXT: ${nextPhase} ${Math.ceil(world.phaseTimer)}s · WIND ${windDeg}°`, TL.x + 10, TL.y + TL.h - 8, 10, '#7dd3fc', 'left');
 }
@@ -873,13 +978,15 @@ function drawBuild(ctx, world) {
 
 function drawWeather(ctx, world) {
   const phase = phaseOf(world);
+  // v2: the phase line names this blizzard's storm.
+  const storm = stormOf(world);
   tablet(ctx, BR, '🌦  WEATHER & STORES');
   const px = BR.x + 12;
   let y = BR.y + 48;
-  text(ctx, `${phase.name} — BLIZZARD ${world.blizzard}/7`, px, y, 14, '#f8fafc', 'left');
+  text(ctx, `${phase.name} · ${storm.name}`, px, y, 14, '#f8fafc', 'left');
   const phaseFrac = 1 - world.phaseTimer / phase.dur;
   bar(ctx, px + 210, y - 11, 150, 8, phaseFrac, '#7dd3fc');
-  text(ctx, world.finalStand ? 'FINAL STAND' : `${Math.ceil(world.blizzardTimer)}s left`, BR.x + BR.w - 12, y, 12, '#7dd3fc', 'right');
+  text(ctx, world.finalStand ? 'FINAL STAND' : `B${world.blizzard} · ${Math.ceil(world.blizzardTimer)}s left`, BR.x + BR.w - 12, y, 12, '#7dd3fc', 'right');
   y += 24;
   // resources
   const res = [
@@ -962,6 +1069,36 @@ function drawBanner(ctx, world) {
   ctx.restore();
 }
 
+// v2: ski-patrol mission strip — centred below the banner (y≈118),
+// name + progress bar + timer, same navy/ice style as the banner.
+function drawMissionStrip(ctx, world) {
+  const m = world.mission;
+  if (!m || m.state !== 'active' || world.screen !== SCREEN_PLAY) return;
+  const w = 560;
+  const x = CX - w / 2;
+  const y = 118;
+  const h = 26;
+  ctx.save();
+  ctx.fillStyle = 'rgba(7, 18, 30, 0.88)';
+  rr(ctx, x, y, w, h, 13);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  textB(ctx, `✦ ${m.name}`, x + 12, y + 18, 11, '#e0f2fe', 'left');
+  const frac = Math.min(1, m.progress / m.target);
+  bar(ctx, x + 262, y + 8, 150, 10, frac, '#7dd3fc');
+  const progText = (m.id === 'dig' || m.id === 'scare')
+    ? `${m.progress}/${m.target}`
+    : `${Math.floor(m.progress)}s / ${m.target}s`;
+  text(ctx, progText, x + 420, y + 18, 11, '#f8fafc', 'left');
+  const timerText = m.id === 'dig' ? `${Math.ceil(m.timer)}s`
+    : m.id === 'scare' ? `${Math.ceil(world.blizzardTimer)}s`
+    : `${Math.ceil(Math.max(0, m.target - m.progress))}s left`;
+  text(ctx, timerText, x + w - 12, y + 18, 12, '#7dd3fc', 'right');
+  ctx.restore();
+}
+
 function drawFloats(ctx, world) {
   for (const f of world.floats) {
     const alpha = Math.max(0, Math.min(1, f.life / 0.6));
@@ -1005,14 +1142,58 @@ function drawSnow(ctx, world) {
 
 function drawWhiteout(ctx, world) {
   if (phaseOf(world).id !== 'whiteout' || world.screen !== SCREEN_PLAY) return;
+  // v2: Whiteout Wall's fog is heavier (storm fog multiplier, capped).
+  const fog = Math.min(1.6, (stormOf(world).fog || 1));
   const g = ctx.createRadialGradient(CX, CY, 120, CX, CY, 620);
   g.addColorStop(0, 'rgba(226, 232, 240, 0.05)');
-  g.addColorStop(1, 'rgba(226, 232, 240, 0.42)');
+  g.addColorStop(1, `rgba(226, 232, 240, ${0.42 * fog})`);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
 }
 
 // --- full screens -----------------------------------------------------------
+
+// v2: difficulty pills (EASY / NORMAL / HARD / ENDLESS) on the title
+// screen, in the empty left-column space below the promise pills (y≈530).
+// One layout function serves both drawing and hit-testing, so the rects
+// can never drift apart. Widths are measured with the real Bungee metrics.
+const measureCanvas = document.createElement('canvas');
+const measureCtx = measureCanvas.getContext('2d');
+export function difficultyPills() {
+  measureCtx.font = `13px ${LOGO_FONT}`;
+  const gap = 8;
+  const h = 30;
+  const y = 530;
+  const pills = DIFFICULTIES.map((d) => {
+    const w = Math.ceil(measureCtx.measureText(d.name).width) + 28;
+    return { id: d.id, name: d.name, w, h, y, x: 0 };
+  });
+  const total = pills.reduce((a, p) => a + p.w, 0) + gap * (pills.length - 1);
+  let x = 302 - total / 2; // centred on the left column (x=302)
+  for (const p of pills) { p.x = x; x += p.w + gap; }
+  return pills;
+}
+
+function drawDifficultyPills(ctx, world) {
+  textB(ctx, 'DIFFICULTY', 302, 522, 12, '#7dd3fc', 'center');
+  for (const p of difficultyPills()) {
+    const sel = p.id === (world.difficulty || 'normal');
+    ctx.fillStyle = sel ? '#7dd3fc' : 'rgba(5, 17, 32, 0.70)';
+    rr(ctx, p.x, p.y, p.w, p.h, 15);
+    ctx.fill();
+    ctx.strokeStyle = sel ? '#e0f2fe' : 'rgba(125,211,252,0.45)';
+    ctx.lineWidth = sel ? 2 : 1;
+    ctx.stroke();
+    textB(ctx, p.name, p.x + p.w / 2, p.y + 20, 13, sel ? '#0b1c2c' : '#e0f2fe', 'center');
+  }
+  const sel = DIFFICULTIES.find((d) => d.id === (world.difficulty || 'normal'));
+  const hint = sel.id === 'endless'
+    ? 'ENDLESS — no final blizzard. How long can you hold?'
+    : sel.id === 'easy' ? 'EASY — gentler snow, slower wolves, calmer hearths.'
+    : sel.id === 'hard' ? 'HARD — faster snow, colder hearths, hungrier wolves.'
+    : 'NORMAL — the mountain as it is.';
+  text(ctx, hint, 302, 578, 12, '#94a3b8', 'center');
+}
 
 // --- title-screen panels (v2, B1 Split) -------------------------------------
 // Navy Solid panel: icy gradient, ice border, frost sheen on the top edge,
@@ -1116,7 +1297,7 @@ function drawTitle(ctx, world) {
   rr(ctx, CX - 430, 24, 860, 30, 15); ctx.fill();
   ctx.strokeStyle = 'rgba(125,211,252,0.40)'; ctx.lineWidth = 1; ctx.stroke();
   ctx.letterSpacing = '1px';
-  textB(ctx, '8 SLOPES  ·  7 BLIZZARDS  ·  5 HAZARDS  ·  5 TOOLS  ·  9 UPGRADES  ·  THE WHITE GIANT', CX, 44, 15, '#7dd3fc', 'center');
+  textB(ctx, '8 SLOPES  ·  7 BLIZZARDS  ·  5 HAZARDS  ·  5 TOOLS  ·  9 UPGRADES  ·  WHITE DEATH', CX, 44, 15, '#7dd3fc', 'center');
   ctx.letterSpacing = '0px';
 
   // Left column (centre x=302): logo, PLAY, BEST + promise pills.
@@ -1166,7 +1347,10 @@ function drawTitle(ctx, world) {
     text(ctx, label, 302 - tw / 2 + (star ? 20 : 0), y + 20, 15, '#e0f2fe', 'left');
   };
   pill(425, `BEST ${Math.max(world.best, 0).toLocaleString('en-US')}`, true);
-  pill(465, '7 BLIZZARDS · 1 GIANT', false);
+  pill(465, '7 BLIZZARDS · WHITE DEATH', false);
+
+  // v2: difficulty select in the empty left-column space below the pills.
+  drawDifficultyPills(ctx, world);
 
   // Right column: HOW TO PLAY + WIN·LOSE panels (620x260 each).
   const px = 548;
@@ -1179,7 +1363,7 @@ function drawTitle(ctx, world) {
     ['CLICK A SLOPE — ', 'bleed the snowpack before it hits 100 and the slope lets go.'],
     ['CLICK WOLF · BURIED · HOUSE — ', 'scare the pack, dig out the buried, stoke the fire.'],
     ['KEYS 1–5 · SPACE — ', 'raise walls, sound the horn, hold the storm, hush the wind.'],
-    ['BETWEEN BLIZZARDS — ', 'draft 1 of 3, then drive the storm\u2019s eye 3×.'],
+    ['BETWEEN BLIZZARDS — ', 'draft 1 of 3, then tear White Death\u2019s 3 shrouds.'],
   ];
   let hy = 60 + 70;
   for (const [verb, rest] of howLines) {
@@ -1208,7 +1392,7 @@ function drawTitle(ctx, world) {
   // Panel 2: win / lose + features.
   titlePanel(ctx, px, 340, pw, ph);
   titlePanelHeading(ctx, px, 340, pw, 'WIN  ·  LOSE');
-  text(ctx, 'WIN — ride out all 7 blizzards and break the White Giant.', px + 20, 340 + 70, 15, '#34d399', 'left');
+  text(ctx, 'WIN — ride out all 7 blizzards and break White Death.', px + 20, 340 + 70, 15, '#34d399', 'left');
   text(ctx, 'LOSE — every house falls silent, or 15 villagers are lost to the snow.', px + 20, 340 + 94, 15, '#f87171', 'left');
   flake(ctx, px + 28, 340 + 118, 7.5, 1);
   textB(ctx, 'WHAT MAKES IT WHITEOUT', px + 46, 340 + 128, 15, '#7dd3fc', 'left');
@@ -1216,7 +1400,7 @@ function drawTitle(ctx, world) {
     'Snowpack depth on every slope — the mountain is the enemy, and it keeps piling on.',
     'Warmth & hearths: forget a house and its fire dies in the cold.',
     'Rescue teams, shifting weather, wolves hunting through the whiteout.',
-    'The White Giant waits past the seventh blizzard — break him or freeze.',
+    'White Death waits past the seventh blizzard — tear his shrouds or freeze.',
   ];
   let fy = 340 + 152;
   for (const f of feats) {
@@ -1295,14 +1479,13 @@ function drawDraft(ctx, world) {
     x += cw + gap;
   });
   // NEXT teaser strip: the real next blizzard (banner text + storehouse bonus
-  // from startBlizzard: wood 8+n, food +6).
+  // from startBlizzard: wood 8+n, food +6). v2: names the next storm.
   const next = world.draftFromBlizzard + 1;
+  const nextStorm = STORMS[(next - 1) % STORMS.length];
   ctx.fillStyle = 'rgba(7, 18, 30, 0.8)';
   rr(ctx, CX - 380, 532, 760, 32, 16); ctx.fill();
   ctx.strokeStyle = '#7dd3fc'; ctx.lineWidth = 2; ctx.stroke();
-  text(ctx, next === BLIZZARDS
-    ? `NEXT: BLIZZARD 7 — THE WHITE GIANT WAKES  ·  WOOD +${8 + next}  ·  FOOD +6`
-    : `NEXT: BLIZZARD ${next} — THE SNOW DEEPENS  ·  WOOD +${8 + next}  ·  FOOD +6`, CX, 553, 15, '#e0f2fe', 'center');
+  text(ctx, `NEXT: BLIZZARD ${next} — ${nextStorm.name}  ·  WOOD +${8 + next}  ·  FOOD +6`, CX, 553, 15, '#e0f2fe', 'center');
   text(ctx, 'The next blizzard starts the moment you choose. The mountain does not wait.', CX, 592, 14, '#94a3b8', 'center');
 }
 
@@ -1391,7 +1574,7 @@ function drawEnd(ctx, world, won) {
   const r = world.result || { score: 0, best: 0, grade: 'D', blizzard: 1, releases: 0, rescues: 0, wolves: 0, avalanches: 0, houses: 0, lost: 0 };
   gradText(ctx, won ? 'THE VILLAGE STANDS' : 'THE SNOW WINS', CX, 96, 64,
     [[0, '#ffffff'], [0.55, '#e8f4ff'], [1, '#9cc8ee']], 'center', 'rgba(90,160,255,0.55)', 26);
-  text(ctx, won ? 'Seven blizzards. One broken Giant. Every hearth still lit.' : world.loseReason || 'The mountain keeps what it takes.', CX, 134, 17, '#e2e8f0', 'center', 'rgba(7,18,30,0.85)');
+  text(ctx, won ? 'Seven blizzards. One broken Death. Every hearth still lit.' : world.loseReason || 'The mountain keeps what it takes.', CX, 134, 17, '#e2e8f0', 'center', 'rgba(7,18,30,0.85)');
   // Grade badge + score: ice grade circle, Bungee score with an ice glow.
   const gg = ctx.createLinearGradient(0, 140, 0, 264);
   gg.addColorStop(0, '#ffffff');
@@ -1416,7 +1599,7 @@ function drawEnd(ctx, world, won) {
   rr(ctx, px, py, 720, 148, 12); ctx.fill();
   ctx.strokeStyle = 'rgba(125,211,252,0.5)'; ctx.lineWidth = 2; ctx.stroke();
   const stats = [
-    ['BLIZZARDS', '🌨', `${r.blizzard} / 7`],
+    ['BLIZZARDS', '🌨', world.endless ? `${r.blizzard}` : `${r.blizzard} / 7`],
     ['RELEASES', '❄', String(r.releases)],
     ['RESCUES', '🆘', String(r.rescues)],
     ['WOLVES SCARED', '🐺', String(r.wolves)],
@@ -1501,6 +1684,14 @@ export function eyePos(world) {
 
 export function hitTest(world, x, y) {
   if (world.screen === SCREEN_TITLE) {
+    // v2: difficulty pills (shared layout with the drawing code).
+    const pills = difficultyPills();
+    for (let i = 0; i < pills.length; i++) {
+      const p = pills[i];
+      if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) {
+        return { kind: 'difficulty', index: i };
+      }
+    }
     // v2 split layout: PLAY button at (172, 355, 260, 56) in the left column.
     if (x >= 172 && x <= 432 && y >= 355 && y <= 411) return { kind: 'play' };
     return { kind: 'none' };
@@ -1524,6 +1715,12 @@ export function hitTest(world, x, y) {
   if (world.screen === SCREEN_PAUSE) return { kind: 'resume' };
   if (world.screen !== SCREEN_PLAY) return { kind: 'none' };
 
+  // v2: White Death first (he rides the ring on night 7), then the
+  // legacy Giant eye — both checked before wolves, like the eye was.
+  if (world.death.active && !world.bossDefeated) {
+    const d = deathPos(world);
+    if (Math.hypot(x - d.x, y - d.y) < 30) return { kind: 'death' };
+  }
   // Boss eye first (it rides the ring).
   if (world.eye.active && !world.bossDefeated) {
     const e = eyePos(world);
@@ -1601,6 +1798,7 @@ export function render(ctx, world) {
     drawWindArrow(ctx, world);
     drawLog(ctx, world);
     drawBanner(ctx, world);
+    drawMissionStrip(ctx, world);
     drawWhiteout(ctx, world);
     drawSnow(ctx, world);
     drawFloats(ctx, world);
