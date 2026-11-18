@@ -745,7 +745,13 @@ function drawStormRing(ctx, world) {
     ctx.beginPath();
     ctx.arc(dp.x, dp.y, 47 + Math.sin(world.time * 4 + 1) * 3, world.time * 1.2, world.time * 1.2 + Math.PI * 1.1);
     ctx.stroke();
-    // tall pale hooded figure: white cloak, hollow dark face, ice eyes
+    // tall pale hooded figure: white cloak, hollow dark face, ice eyes.
+    // A dark ground shadow + a stronger blue rim keep the white cloak
+    // legible against the whiteout fog.
+    ctx.fillStyle = 'rgba(7, 18, 30, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(dp.x, dp.y + 26, 18, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
     const cg = ctx.createLinearGradient(dp.x, dp.y - 30, dp.x, dp.y + 28);
     cg.addColorStop(0, '#ffffff');
     cg.addColorStop(1, '#bae6fd');
@@ -758,8 +764,8 @@ function drawStormRing(ctx, world) {
     ctx.quadraticCurveTo(dp.x, dp.y + 30, dp.x - 13, dp.y + 26);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = '#7dd3fc';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2.5;
     ctx.stroke();
     // hollow dark face
     ctx.fillStyle = '#0b1c2c';
@@ -1076,26 +1082,26 @@ function drawMissionStrip(ctx, world) {
   if (!m || m.state !== 'active' || world.screen !== SCREEN_PLAY) return;
   const w = 560;
   const x = CX - w / 2;
-  const y = 118;
-  const h = 26;
+  const y = 116; // 116..138: clears the banner (ends 114) and the N slope label (top ~140)
+  const h = 22;
   ctx.save();
   ctx.fillStyle = 'rgba(7, 18, 30, 0.88)';
-  rr(ctx, x, y, w, h, 13);
+  rr(ctx, x, y, w, h, 11);
   ctx.fill();
   ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  textB(ctx, `✦ ${m.name}`, x + 12, y + 18, 11, '#e0f2fe', 'left');
+  textB(ctx, `✦ ${m.name}`, x + 12, y + 16, 11, '#e0f2fe', 'left');
   const frac = Math.min(1, m.progress / m.target);
-  bar(ctx, x + 262, y + 8, 150, 10, frac, '#7dd3fc');
+  bar(ctx, x + 262, y + 6, 150, 10, frac, '#7dd3fc');
   const progText = (m.id === 'dig' || m.id === 'scare')
     ? `${m.progress}/${m.target}`
     : `${Math.floor(m.progress)}s / ${m.target}s`;
-  text(ctx, progText, x + 420, y + 18, 11, '#f8fafc', 'left');
+  text(ctx, progText, x + 420, y + 16, 11, '#f8fafc', 'left');
   const timerText = m.id === 'dig' ? `${Math.ceil(m.timer)}s`
     : m.id === 'scare' ? `${Math.ceil(world.blizzardTimer)}s`
     : `${Math.ceil(Math.max(0, m.target - m.progress))}s left`;
-  text(ctx, timerText, x + w - 12, y + 18, 12, '#7dd3fc', 'right');
+  text(ctx, timerText, x + w - 12, y + 16, 12, '#7dd3fc', 'right');
   ctx.restore();
 }
 

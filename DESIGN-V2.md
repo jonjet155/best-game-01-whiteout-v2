@@ -65,7 +65,7 @@ Standing entry (DO NOT TOUCH): submission `01a1e8fc`, claim
   - **SCARE 4 WOLVES** — scare 4 wolves before the blizzard ends;
     reward +10 wood +200; fail: wolves steal 6 food.
 - UI: compact mission strip during play, centred below the banner
-  (y≈118, w 560, h ≈26, navy/ice style), name + progress bar + timer.
+  (y≈116, w 560, h ≈22, navy/ice style), name + progress bar + timer.
   Success/failure announced via banner + float + log; reward/penalty
   applied in world.js. An unfinished mission resolves (success if
   progress met, else fail) when its blizzard ends.

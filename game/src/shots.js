@@ -107,7 +107,8 @@ export function stageShot(name, world) {
   world.comboTimer = 4.2;
   world.eye.active = false;
   world.eye.pushes = 0;
-  world.death = { active: true, angle: -45, dist: 210, shrouds: 1, freezeTimer: 5 };
+  world.death = { active: true, angle: -22, dist: 210, shrouds: 1, freezeTimer: 5 }; // -22°: between the NE and E slope labels, so the figure never hides one
+  world.icefallTimer = 10; // storm 7's icefall cadence — 0 would fire at once in staged (dt=0) updates
   // v2: an active ski-patrol mission (the strip shows under the banner).
   world.mission = { id: 'dig', name: 'DIG OUT 3 BURIED', desc: 'Rescue 3 buried villagers before the timer runs out', target: 3, progress: 1, timer: 32, state: 'active', slope: -1 };
   world.villagers.evacuated = 11;
@@ -153,7 +154,6 @@ export function stageShot(name, world) {
   world.floats.push({ x: 900, y: 300, text: '+40', color: '#7dd3fc', life: 0.8, maxLife: 1.1 });
   world.floats.push({ x: 480, y: 290, text: 'COMBO x1.25', color: '#7dd3fc', life: 1.0, maxLife: 1.1, size: 24 });
   world.floats.push({ x: 780, y: 565, text: '+50 RESCUED', color: '#7dd3fc', life: 0.7, maxLife: 1.1 });
-  world.floats.push({ x: 506, y: 200, text: 'FROZEN!', color: '#bae6fd', life: 1.0, maxLife: 1.1, size: 22 });
   world.banner = 'BLIZZARD 7 — WHITE DEATH WALKS THE RING · TEAR THE SHROUDS';
   world.bannerTimer = 2.5;
   world.log = [
