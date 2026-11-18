@@ -24,8 +24,6 @@ const seed = Number(params.get('seed') || SEED);
 
 const world = createWorld(seed);
 world.audioMuted = false;
-// v2: debug handle for live playtests (read state / force scenarios).
-window.__world = world;
 const input = createInput(canvas);
 const audio = createAudio();
 world.best = Number(localStorage.getItem('whiteout-best') || 0);
